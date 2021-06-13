@@ -1,0 +1,94 @@
+plugins {
+    id 'nu.studer.plugindev' version '1.0.12'
+    id 'com.jfrog.bintray' version '1.8.4'
+    id 'com.ullink.msbuild' version '3.9'
+    id 'com.ullink.nuget' version '2.18'
+    id 'com.ullink.nunit' version '2.0'
+    id 'net.researchgate.release' version '2.6.0'
+    id 'de.undercouch.download' version '3.4.3'
+}
+
+group = 'com.ullink.gradle'
+
+apply plugin: 'groovy'
+
+description 'Gradle plugin for MSBuild project build.'
+
+ext.dotnetPath = file('src/main/dotnet')
+
+dependencies {
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.spockframework:spock-core:1.2-groovy-2.5'
+    compile gradleApi()
+    compile 'net.java.dev.jna:jna:4.2.2'
+    compile 'net.java.dev.jna:jna-platform:4.2.2'
+    compile 'com.google.guava:guava:27.0.1-jre'
+}
+
+nugetRestore {
+    solutionFile = file('ProjectFileParser.sln')
+}
+
+msbuild.dependsOn nugetRestore
+msbuild {
+    solutionFile = file('ProjectFileParser.sln')
+    configuration = 'Release'
+    projectName = 'ProjectFileParser'
+}
+
+nunit {
+    testAssemblies = [ msbuild.projects['ProjectFileParser_Tests'].properties.TargetPath ]
+}
+
+task generateZip(dependsOn: nunit, type: Zip) {
+    from (msbuild.mainProject.properties.TargetDir) {
+        include '*.exe'
+        include '**/*.dll'
+        include '*.config'
+    }
+    into '/'
+    archiveFileName = 'ProjectFileParser.zip'
+}
+
+task downloadVsWhere(type: de.undercouch.gradle.tasks.download.Download) {
+    src 'https://github.com/Microsoft/vswhere/releases/download/2.8.4/vswhere.exe'
+    dest "$temporaryDir/vswhere.exe"
+}
+
+jar {
+    from(generateZip.outputs.files) {
+        into ('META-INF')
+    }
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = [ downloadVsWhere.temporaryDir ]
+        }
+    }
+}
+
+bintray {
+    pkg.repo = 'gradle-plugins'
+    pkg.userOrg = 'ullink'
+    pkg.version.gpg.sign = true
+}
+
+plugindev {
+    pluginId 'com.ullink.msbuild'
+    pluginName 'com.ullink.gradle:gradle-msbuild-plugin'
+    pluginImplementationClass 'com.ullink.MsbuildPlugin'
+    pluginDescription project.description
+    pluginLicenses 'Apache-2.0'
+    pluginTags 'gradle', 'plugin', 'msbuild', 'c#', '.net'
+    authorId 'gluck'
+    authorName 'Francois Valdy'
+    authorEmail 'francois.valdy@gmail.com'
+    projectUrl "https://github.com/Itiviti/${project.name}"
+    projectInceptionYear '2012'
+    done()
+}
+
+processResources.dependsOn downloadVsWhere
+afterReleaseBuild.dependsOn bintrayUpload
